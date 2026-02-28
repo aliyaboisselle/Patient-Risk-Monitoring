@@ -7,11 +7,24 @@
 ## Purpose
 Consumer wearables gather large amounts of data that, if synthesized correctly, could be used to proactively monitor for potential health events. With the correct calibration, this could be used to escalate critical events, getting patients the care they need at the moment they need it most. This architecture outlines an escalation system that ingests data and relevant EMR information to determine if and when to escalate irregular vitals.
 
+## Project Status
+
+This project is currently in the architecture and design phase.  
+No production code or live integrations exist yet.
+
+The goal of the upcoming V1 implementation is to validate:
+- Wearable ingestion via mock API
+- Risk scoring logic
+- Flag generation workflow
+- Basic dashboard auditability
+
+This repository documents the proposed architecture and implementation roadmap.
+
 ## Architecture
 **Wearable Input Layer**
-Consumer wearables record several vitals that can provide insight into a user’s current health status. For V1, the focus will be on vitals that are relatively accurate, heart rate (HR), resting heart rate (RHR), heart rate variability (HRV), sleep duration, step count, artrial fibrillation (AF). 
+Consumer wearables record several vitals that can provide insight into a user’s current health status. For the planned V1, the focus will be on vitals that are relatively accurate, heart rate (HR), resting heart rate (RHR), heart rate variability (HRV), sleep duration, step count, artrial fibrillation (AF). 
 
-Consumer wearable data will be ingested via an API call. V1 simulates this with a mock API and consumer wearable data. 
+Consumer wearable data will be ingested via an API call. THe planned V1 simulates this with a mock API and consumer wearable data. 
 
 **Wearable Risk Engine**
 The wearable risk engine calculates the risk score for the combination of vitals that is provided by the consumer wearable. This engine will calculate a severity score based on the severity of vitals (0-100 scale). Once the severity is calculated, a confidence score is calculated. This is based on the duration of the vitals. For instance, if for a large part of the day the wearable did not gather data, confidence may be lower. Risk calculations should be displayed in the risk dashboard for auditability.
@@ -25,7 +38,7 @@ The outputs from the previous 2 sections, risk score and EHR modifier, are calcu
 (risk 0-100)*(confidence 0-1.0)*(EHR modifier 0-1.0)=Risk
 
 **Risk Flag**
-Once a risk score has been calculated, a flag for risk can be set for the patient. For V1, the following flag structure will be used:
+Once a risk score has been calculated, a flag for risk can be set for the patient. For the planned V1, the following flag structure will be used:
 
 | Flag | Behavior |
 |------|----------|
@@ -49,6 +62,22 @@ The risk flags will feed into a patient dashboard that displays the risk flag st
 | EHR Configuration | Maps flag status to follow up action item (patient message, provider escalation) |
 | Risk Dashboard | Auditing Dashboard - Patient, recent vitals, current flag, and reasoning displayed |
 
+## Planned V1 Scope
+
+- Mock wearable API ingestion
+- Python-based risk engine
+- Static rule-based severity model
+- Configurable confidence scoring
+- Risk flag assignment
+- Mock EHR ingestion and write
+- Simple audit dashboard (local)
+
+Out of scope for V1:
+- Clinical validation
+- Live EHR integration
+- Real patient data
+- Production deployment
+  
 ## Open Problems
 | Problem | Status |
 |-------|------------|
@@ -57,7 +86,7 @@ The risk flags will feed into a patient dashboard that displays the risk flag st
 | Data ingestion timing | Consumer wearables record data consistently. Determining the right amount of time between pulls is an open question. This is a configurable option in the architecture, but additional research is needed to understand where the recommendation should be. |
 | Consumer wearable reliability and human activity | Consumer wearable reliability is not always consistent and human activity is often variable. Additional research is needed to tune for both. |
 
-## Future Improvements
+## Phase 2+ Improvements
 
 - Additional diagnosis support
 - Additional vital information
