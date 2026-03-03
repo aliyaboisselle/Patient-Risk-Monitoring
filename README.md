@@ -26,14 +26,14 @@ Consumer wearables record several vitals that can provide insight into a user’
 
 Consumer wearable data will be ingested via an API call. THe planned V1 simulates this with a mock API and consumer wearable data. 
 
-**Wearable Risk Engine**
-The wearable risk engine calculates the risk score for the combination of vitals that is provided by the consumer wearable. This engine will calculate a severity score based on the severity of vitals (0-100 scale). Once the severity is calculated, a confidence score is calculated. This is based on the duration of the vitals. For instance, if for a large part of the day the wearable did not gather data, confidence may be lower. Risk calculations should be displayed in the risk dashboard for auditability.
+**Wearable Risk Engines**
+The wearable risk engines calculate the risk score for the combination of vitals that is provided by the consumer wearable for both chronic decompensation and acute danger. These engines will calculate a severity score based on the severity of vitals (0-100 scale). Once the severity is calculated, a persistence modifier is added. This is based on the duration of the vitals. Risk calculations should be displayed in the risk dashboard for auditability.
 
 **EHR Modifier Layer (recommended, not required)**
 The EHR Modifier layer is an optional layer that allows for an EHR API to be called to ingest specific relevant patient fields. For each diagnosis in scope, the EHR modifier should give a defined value (0-1.0) that will be used to adjust the vital risk score.
 
 **Risk Calculation**
-The outputs from the previous 2 sections, risk score and EHR modifier, are calculated with the following formula to determine a risk flag:
+The outputs from the previous 2 sections, risk score and EHR modifier, and a confidence modifier that determines the reliability of the data are calculated with the following formula to determine a risk flag:
 
 (risk 0-100)*(confidence 0-1.0)*(EHR modifier 0-1.0)=Risk
 
@@ -42,10 +42,10 @@ Once a risk score has been calculated, a flag for risk can be set for the patien
 
 | Flag | Behavior |
 |------|----------|
-| Green (0-50) | Vitals are good and/or confidence is low. No action needed, no follow up. |
-| Yellow (>50-80) | Vitals are out of range, conditions may factor in, confidence is medium to high. Patient flagged with intelligent follow up questions if integration is available. Flag patient as potential risk on dashboard. |
-| Red (>80-95) | Vitals are severely out of range, conditions may factor in, confidence high. Provider flagged to follow up with patient if integration available. Flag patient as risk on dashboard. |
-| Critical (>95) | Vitals are severely out of range, conditions are present, confidence is high. If integration available, alert provider immediately. Patient needs medical care. Dashboard flags patient as critical risk on dashboard. |
+| Green | Vitals are good and/or confidence is low. No action needed, no follow up. |
+| Yellow | Vitals are out of range, conditions may factor in, confidence is medium to high. Patient flagged with intelligent follow up questions if integration is available. Flag patient as potential risk on dashboard. |
+| Red | Vitals are severely out of range, conditions may factor in, confidence high. Nurse flagged to follow up with patient if integration available. Flag patient as risk on dashboard. |
+| Critical | Vitals are severely out of range, conditions are present, confidence is high. If integration available, alert provider immediately. Patient needs medical care. Dashboard flags patient as critical risk on dashboard. |
 
 **Risk Dashboard**
 The risk flags will feed into a patient dashboard that displays the risk flag status and reasoning behind status. Statuses should allow auditability into the system decisions and a drilldown view with raw data and risk scoring calculations should be available.
@@ -55,7 +55,7 @@ The risk flags will feed into a patient dashboard that displays the risk flag st
 | Layer | Technology |
 |-------|------------|
 | Wearable Input Integration | Integration with consumer wearable (eg. Open Wearables) |
-| Wearable Risk Engine | Python Code Calculation |
+| Wearable Risk Engines | Python Code Calculation |
 | EHR Integration  | FHIR API Call |
 | EHR Modifier | Python Code Calculation |
 | Risk Flag | FHIR API - writes flag status to EHR or other system |
@@ -67,7 +67,7 @@ The risk flags will feed into a patient dashboard that displays the risk flag st
 - Mock wearable API ingestion
 - Python-based risk engine
 - Static rule-based severity model
-- Configurable confidence scoring
+- Confidence scoring
 - Risk flag assignment
 - Mock EHR ingestion and write
 - Simple audit dashboard (local)
@@ -90,6 +90,7 @@ Out of scope for V1:
 
 - Additional diagnosis support
 - Additional vital information
+- Advanced risk calculation formulas, including additional demographic, activity, and baseline data
 
 ## License
 *MIT — free to use, adapt, and share.*
