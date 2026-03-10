@@ -578,7 +578,7 @@ def main():
     for cohort, n in COHORTS.items():
         print(f"Generating {n} {cohort} patients...")
         for i in range(n):
-            pid = f"{PREFIX[cohort]}_{counters[cohort]:03d}"
+            pid = f"{PREFIX[cohort]}{args.seed}_{counters[cohort]:03d}"
             counters[cohort] += 1
             patients.append(generate_patient(pid, cohort))
             if (i + 1) % 10 == 0: print(f"  ...{i+1}/{n}")
