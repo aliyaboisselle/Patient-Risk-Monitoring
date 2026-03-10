@@ -9,7 +9,7 @@ Consumer wearables gather large amounts of data that, if synthesized correctly, 
 
 ## Project Status
 
-This project is currently in the architecture and design phase.  
+This project is currently in the architecture and mock study phase. See synthetic study branch for V1 prototype
 No production code or live integrations exist yet.
 
 The goal of the upcoming V1 implementation is to validate:
