@@ -5,14 +5,14 @@
 **This project is not meant to be used with real patient data. This project involves mock patient data and healthcare workflows, but are fictional and not clinically validated.**
 
 ## Purpose
-Consumer wearables gather large amounts of data that, if synthesized correctly, could be used to proactively monitor for potential health events. With the correct calibration, this could be used to escalate critical events, getting patients the care they need at the moment they need it most. This architecture outlines an escalation system that ingests data and relevant EMR information to determine if and when to escalate irregular vitals.
+The synthetic mock study v1 provides a method for displaying risk calculations and escalations defined in the architecture. This is a mock study. This project is not meant for clinical use and has not been clinically validated. DO NOT PUT PHI INTO THIS SCORING ENGINE. PHI SECURITY HANDLING IS NOT IN SCOPE.
 
 ## Project Status
 
-This project is currently in the architecture and design phase.  
+This project is currently in the architecture and mock study phase
 No production code or live integrations exist yet.
 
-The goal of the upcoming V1 implementation is to validate:
+The goal of this V1 implementation is to validate:
 - Wearable ingestion via mock API
 - Risk scoring logic
 - Flag generation workflow
@@ -62,7 +62,7 @@ The risk flags will feed into a patient dashboard that displays the risk flag st
 | EHR Configuration | Maps flag status to follow up action item (patient message, provider escalation) |
 | Risk Dashboard | Auditing Dashboard - Patient, recent vitals, current flag, and reasoning displayed |
 
-## Planned V1 Scope
+## Planned V1 Synthetic Study Scope
 
 - Mock wearable API ingestion
 - Python-based risk engine
