@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<!--
+  =============================================================================
+  VALIDATION TOOL — SYNTHETIC DATA ONLY
+  =============================================================================
+  This dashboard is a pre-prototype validation tool for the Patient Wearable
+  Risk Monitoring architecture (v1, February 2026). It is intended for use
+  exclusively with synthetically generated patient data.
+
+  DO NOT use this tool with real patient data.
+  DO NOT use scoring output from this tool for any clinical decision-making.
+  This tool has NOT been clinically validated and is NOT a medical device.
+
+  localStorage usage: Evaluation annotations (TP/FP/FN/TN labels) are
+  persisted in browser localStorage under the key 'wrm_evals'. This data
+  is scoped to the browser origin and is NOT transmitted anywhere. It
+  persists until manually cleared (Evaluation tab → Clear All) or until
+  browser storage is cleared. No patient vital data is stored — only the
+  evaluation labels, flag values, and risk scores assigned during a session.
+  Replace localStorage with server-side session storage before any use
+  beyond synthetic-data validation.
+  =============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Content-Security-Policy: restricts script execution to this document only.
+  The Google Fonts @import in CSS requires the style-src directive below.
+  In production, replace 'unsafe-inline' with a nonce or hash.
+-->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none';">
+<title>Wearable Risk Monitor — v1</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+:root {
+  --bg:#0a0c0f;--bg2:#111418;--bg3:#181c22;--border:#222830;--border2:#2e3540;
+  --text:#c8d0db;--text-dim:#5a6478;--text-mid:#8892a4;--accent:#3b82f6;
+  --green:#22c55e;--green-bg:#0d1f14;--green-dim:#166534;
+  --yellow:#eab308;--yellow-bg:#1c1a08;--yellow-dim:#854d0e;
+  --red:#ef4444;--red-bg:#1c0a0a;--red-dim:#7f1d1d;
+  --critical:#f97316;--crit-bg:#1c0e04;--crit-dim:#7c2d12;
+  --insuff:#64748b;--insuff-bg:#0f1419;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.5;min-height:100vh;}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;}
+.logo{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.15em;color:var(--text-mid);text-transform:uppercase;}
+.logo span{color:var(--accent);}
+.header-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:.05em;}
+.header-tabs{display:flex;gap:2px;}
+.tab-btn{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;padding:6px 14px;border:1px solid var(--border2);background:transparent;color:var(--text-dim);cursor:pointer;text-transform:uppercase;transition:all .15s;border-radius:3px;}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.controls{display:flex;gap:12px;align-items:flex-end;padding:16px 24px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.ctrl-group{display:flex;flex-direction:column;gap:4px;}
+.ctrl-group label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;}
+.ctrl-group input,.ctrl-group select{background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;outline:none;transition:border-color .15s;}
+.ctrl-group input:focus,.ctrl-group select:focus{border-color:var(--accent);}
+.ctrl-group input[type=number]{width:90px;}
+.ctrl-group input[type=file]{width:260px;cursor:pointer;}
+button.run-btn{background:var(--accent);color:#fff;border:none;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.08em;padding:8px 18px;border-radius:4px;cursor:pointer;transition:opacity .15s;align-self:flex-end;text-transform:uppercase;}
+button.run-btn:hover{opacity:.85;}
+button.run-btn:disabled{opacity:.4;cursor:not-allowed;}
+.status-bar{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);padding:6px 24px;background:var(--bg);border-bottom:1px solid var(--border);min-height:26px;}
+/* pages */
+.page{display:none;}
+.page.active{display:block;}
+/* SCORING PAGE */
+.layout{display:grid;grid-template-columns:290px 1fr;height:calc(100vh - 158px);}
+.patient-list{border-right:1px solid var(--border);overflow-y:auto;background:var(--bg2);}
+.list-header{padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);display:flex;justify-content:space-between;align-items:center;}
+.list-filters{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.filter-btn{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:3px;border:1px solid transparent;cursor:pointer;text-transform:uppercase;transition:all .12s;}
+.filter-btn.all{border-color:var(--border2);color:var(--text-mid);background:transparent;}
+.filter-btn.green{border-color:var(--green-dim);color:var(--green);background:var(--green-bg);}
+.filter-btn.yellow{border-color:var(--yellow-dim);color:var(--yellow);background:var(--yellow-bg);}
+.filter-btn.red{border-color:var(--red-dim);color:var(--red);background:var(--red-bg);}
+.filter-btn.critical{border-color:var(--crit-dim);color:var(--critical);background:var(--crit-bg);}
+.filter-btn.insuff{border-color:#334155;color:var(--insuff);background:var(--insuff-bg);}
+.filter-btn.active{box-shadow:0 0 0 1px currentColor;}
+.patient-item{padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;display:flex;align-items:center;gap:10px;}
+.patient-item:hover{background:var(--bg3);}
+.patient-item.selected{background:#0f1a2e;border-left:2px solid var(--accent);padding-left:12px;}
+.flag-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.flag-dot.GREEN{background:var(--green);}
+.flag-dot.YELLOW{background:var(--yellow);box-shadow:0 0 4px var(--yellow);}
+.flag-dot.RED{background:var(--red);box-shadow:0 0 5px var(--red);}
+.flag-dot.CRITICAL{background:var(--critical);box-shadow:0 0 8px var(--critical);animation:pulse 1.2s infinite;}
+.flag-dot.INSUFFICIENT{background:var(--insuff);}
+@keyframes pulse{0%,100%{box-shadow:0 0 4px var(--critical);}50%{box-shadow:0 0 12px var(--critical);}}
+.patient-info{flex:1;min-width:0;}
+.patient-id{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.patient-sub{font-size:10px;color:var(--text-dim);margin-top:1px;}
+.patient-scores{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim);text-align:right;flex-shrink:0;}
+/* eval badge on patient item */
+.eval-badge{font-family:'IBM Plex Mono',monospace;font-size:8px;font-weight:600;padding:2px 5px;border-radius:2px;margin-top:2px;display:inline-block;}
+.eval-badge.tp{background:#0d1f14;color:var(--green);border:1px solid var(--green-dim);}
+.eval-badge.fp{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim);}
+.eval-badge.fn{background:var(--crit-bg);color:var(--critical);border:1px solid var(--crit-dim);}
+.eval-badge.tn{background:var(--bg3);color:var(--text-dim);border:1px solid var(--border2);}
+.eval-badge.wf{background:#1a0a2e;color:#c084fc;border:1px solid #6b21a8;}
+.eval-badge.bl{background:#061b24;color:#22d3ee;border:1px solid #0e7490;}
+/* detail panel */
+.detail-panel{overflow-y:auto;background:var(--bg);padding:20px 24px;}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.empty-icon{font-size:32px;opacity:.3;}
+.detail-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:16px;flex-wrap:wrap;}
+.detail-id{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;color:var(--text);}
+.detail-meta{font-size:11px;color:var(--text-dim);margin-top:3px;}
+.flag-badge{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;padding:6px 16px;border-radius:4px;letter-spacing:.08em;}
+.flag-badge.GREEN{background:var(--green-bg);color:var(--green);border:1px solid var(--green-dim);}
+.flag-badge.YELLOW{background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-dim);}
+.flag-badge.RED{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim);}
+.flag-badge.CRITICAL{background:var(--crit-bg);color:var(--critical);border:1px solid var(--crit-dim);animation:pulse-border 1.2s infinite;}
+.flag-badge.INSUFFICIENT{background:var(--insuff-bg);color:var(--insuff);border:1px solid #334155;}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,.3);}50%{box-shadow:0 0 0 4px rgba(249,115,22,0);}}
+/* eval buttons on detail */
+.eval-buttons{display:flex;gap:6px;align-items:center;margin-top:8px;}
+.eval-btn{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;padding:4px 10px;border-radius:3px;cursor:pointer;text-transform:uppercase;border:1px solid transparent;transition:all .12s;}
+.eval-btn.tp-btn{border-color:var(--green-dim);color:var(--green);background:var(--green-bg);}
+.eval-btn.fp-btn{border-color:var(--red-dim);color:var(--red);background:var(--red-bg);}
+.eval-btn.fn-btn{border-color:var(--crit-dim);color:var(--critical);background:var(--crit-bg);}
+.eval-btn.tn-btn{border-color:var(--border2);color:var(--text-mid);background:var(--bg3);}
+.eval-btn.wf-btn{border-color:#6b21a8;color:#c084fc;background:#1a0a2e;}
+.eval-btn.bl-btn{border-color:#0e7490;color:#22d3ee;background:#061b24;}
+.eval-btn.active{box-shadow:0 0 0 2px currentColor;}
+.eval-lbl{font-size:10px;color:var(--text-dim);margin-right:4px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;}
+/* flag highlight on card when floor was the reason */
+.card.floor-elevated{border-color:var(--yellow-dim);}
+.card-label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;}
+.card-value{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--text);line-height:1;}
+.card-value.warning{color:var(--yellow);}
+.card-value.danger{color:var(--red);}
+.card-value.critical{color:var(--critical);}
+.card-sub{font-size:10px;color:var(--text-dim);margin-top:4px;}
+.score-bar-wrap{margin-top:6px;}
+.score-bar-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;}
+.score-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
+section-title{display:block;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;margin:16px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+.rules-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+.rule-tag{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:500;padding:3px 8px;border-radius:3px;letter-spacing:.04em;}
+.rule-tag.critical{background:var(--crit-bg);color:var(--critical);border:1px solid var(--crit-dim);}
+.rule-tag.warning{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim);}
+.rule-tag.info{background:#0f1a2e;color:var(--accent);border:1px solid #1e3a5f;}
+.rule-tag.floor-red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim);}
+.rule-tag.floor-yellow{background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-dim);}
+.floor-note{font-size:10px;color:var(--yellow);margin-top:6px;font-style:italic;}
+.cohort-pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:500;letter-spacing:.06em;padding:2px 7px;border-radius:3px;text-transform:uppercase;background:var(--bg3);border:1px solid var(--border2);color:var(--text-mid);}
+/* EVAL PAGE */
+.eval-page{padding:24px;overflow-y:auto;height:calc(100vh - 158px);}
+.eval-banner{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.eval-banner-stat{text-align:center;min-width:60px;}
+.eval-banner-stat .num{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;line-height:1;}
+.eval-banner-stat .lbl{font-size:10px;color:var(--text-dim);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+.eval-banner-stat.tp .num{color:var(--green);}
+.eval-banner-stat.fp .num{color:var(--red);}
+.eval-banner-stat.fn .num{color:var(--critical);}
+.eval-banner-stat.tn .num{color:var(--text-mid);}
+.eval-divider{width:1px;height:40px;background:var(--border);flex-shrink:0;}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px 16px;}
+.metric-label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px;}
+.metric-value{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;color:var(--text);line-height:1;}
+.metric-value.good{color:var(--green);}
+.metric-value.warn{color:var(--yellow);}
+.metric-value.bad{color:var(--red);}
+.metric-sub{font-size:10px;color:var(--text-dim);margin-top:5px;}
+.metric-bar{height:4px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden;}
+.metric-bar-fill{height:100%;border-radius:2px;transition:width .5s ease;}
+.eval-table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
+.eval-table-head{padding:10px 16px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);}
+table.eval-tbl{width:100%;border-collapse:collapse;}
+table.eval-tbl th{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;padding:8px 16px;text-align:left;border-bottom:1px solid var(--border);font-weight:500;}
+table.eval-tbl td{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:7px 16px;border-bottom:1px solid var(--border);}
+table.eval-tbl tr:last-child td{border-bottom:none;}
+table.eval-tbl tr:hover td{background:var(--bg3);}
+.no-eval-state{text-align:center;padding:60px 24px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-size:11px;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* ── CALC BREAKDOWN ── */
+.calc-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
+  background:none;border:none;cursor:pointer;padding:10px 14px;
+  font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;
+  letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;
+  border-top:1px solid var(--border);margin-top:8px;transition:color .15s;}
+.calc-toggle:hover{color:var(--text);}
+.calc-toggle .chevron{font-size:10px;transition:transform .2s;}
+.calc-toggle.open .chevron{transform:rotate(180deg);}
+.calc-body{display:none;padding:0 14px 12px;border-top:1px solid var(--border);}
+.calc-body.open{display:block;}
+.calc-step{display:flex;align-items:baseline;gap:6px;padding:4px 0;
+  border-bottom:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:10px;}
+.calc-step:last-child{border-bottom:none;}
+.calc-step-label{color:var(--text-dim);min-width:160px;flex-shrink:0;}
+.calc-step-val{color:var(--text);font-weight:500;}
+.calc-step-note{color:var(--text-dim);font-size:9px;margin-left:auto;}
+.calc-step.highlight .calc-step-val{color:var(--accent);}
+.calc-step.warn-step .calc-step-val{color:var(--yellow);}
+.calc-step.danger-step .calc-step-val{color:var(--red);}
+.calc-step.critical-step .calc-step-val{color:var(--critical);}
+.calc-formula{font-family:'IBM Plex Mono',monospace;font-size:9px;
+  color:var(--text-dim);padding:6px 0 4px;line-height:1.8;}
+.calc-formula .val{color:var(--accent);}
+.calc-formula .op{color:var(--text-mid);}
+.calc-eq{color:var(--text);font-weight:600;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Wearable Risk <span>Monitor</span></div>
+  <div class="header-tabs">
+    <button class="tab-btn active" onclick="showPage('scoring')">Scoring</button>
+    <button class="tab-btn" onclick="showPage('eval')">Evaluation</button>
+  </div>
+  <div class="header-meta">RULESET v1.0 &nbsp;·&nbsp; PRE-PROTOTYPE</div>
+</header>
+
+<div class="controls">
+  <div class="ctrl-group" id="dataFileGroup">
+    <label>Data File (patient_data.json)</label>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="file" id="dataFile" accept=".json">
+      <button id="dataFileClear" onclick="clearFile('data')" title="Remove file"
+        style="display:none;padding:3px 8px;font-size:11px;cursor:pointer;border-radius:3px;
+               border:1px solid var(--border2);background:var(--bg3);color:var(--text-dim);">✕</button>
+    </div>
+  </div>
+  <div class="ctrl-group" id="resultsFileGroup">
+    <label>Results File (optional pre-scored .json)</label>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="file" id="resultsFile" accept=".json">
+      <button id="resultsFileClear" onclick="clearFile('results')" title="Remove file"
+        style="display:none;padding:3px 8px;font-size:11px;cursor:pointer;border-radius:3px;
+               border:1px solid var(--border2);background:var(--bg3);color:var(--text-dim);">✕</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <label>Hour Index (0–719)</label>
+    <input type="number" id="hourInput" value="360" min="0" max="719">
+  </div>
+  <div class="ctrl-group">
+    <label>Cohort Filter</label>
+    <select id="cohortFilter">
+      <option value="">All Cohorts</option>
+      <option value="healthy_baseline">Healthy Baseline</option>
+      <option value="anxiety">Anxiety</option>
+      <option value="chf">CHF</option>
+      <option value="af_prone">AF-Prone</option>
+      <option value="mixed_risk">Mixed Risk</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+  <button class="run-btn" id="runBtn" onclick="runScoring()" disabled>Run Scoring</button>
+</div>
+<div class="status-bar" id="statusBar">Load a data file or results file to begin.</div>
+<!-- Storage banner: shown briefly on load when prior session evals are restored -->
+<div id="storageBanner" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  color:#22d3ee;background:#061b24;border-bottom:1px solid #0e7490;padding:5px 24px;"></div>
+<!-- Disclaimer strip — always visible -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.05em;
+  color:#854d0e;background:#1c1a08;border-bottom:1px solid #854d0e;padding:4px 24px;">
+  ⚠ SYNTHETIC DATA ONLY — NOT FOR CLINICAL USE — PRE-PROTOTYPE / NOT CLINICALLY VALIDATED
+</div>
+
+<!-- SCORING PAGE -->
+<div id="page-scoring" class="page active">
+  <div class="layout">
+    <div class="patient-list">
+      <div class="list-header">
+        <span>Patients</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="patientCount">—</span>
+        </div>
+      </div>
+      <div class="list-filters">
+        <button class="filter-btn all active" onclick="filterFlag('')">All</button>
+        <button class="filter-btn critical" onclick="filterFlag('CRITICAL')">CRIT</button>
+        <button class="filter-btn red" onclick="filterFlag('RED')">RED</button>
+        <button class="filter-btn yellow" onclick="filterFlag('YELLOW')">YLW</button>
+        <button class="filter-btn green" onclick="filterFlag('GREEN')">GRN</button>
+        <button class="filter-btn insuff" onclick="filterFlag('INSUFFICIENT')">INSUFF</button>
+      </div>
+      <div id="patientListBody"></div>
+    </div>
+    <div class="detail-panel" id="detailPanel">
+      <div class="empty-state">
+        <div class="empty-icon">⌁</div>
+        <div>No patient selected</div>
+        <div style="color:var(--text-dim);font-size:9px;margin-top:4px">Load data and run scoring, then select a patient</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EVAL PAGE -->
+<div id="page-eval" class="page">
+  <div class="eval-page" id="evalPageContent">
+    <div class="no-eval-state">
+      <div style="font-size:28px;opacity:.2;margin-bottom:12px">◈</div>
+      No evaluation data yet.<br>
+      <span style="font-size:10px;color:var(--text-dim)">Score patients, then use the TP / FP / FN / TN buttons on each patient to record evaluations.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── HTML SANITIZATION ──────────────────────────────────────────────────────
+// esc() must be used whenever externally-sourced strings (patient IDs, cohort
+// names, flag values from loaded JSON) are interpolated into innerHTML template
+// literals. This prevents script injection if a malformed or adversarially
+// crafted data file contains HTML/JS in string fields.
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let patientData = null;
+let results     = [];
+let selectedId  = null;
+let flagFilter  = '';
+
+// ── LOCALSTORAGE — EVALUATION PERSISTENCE ──────────────────────────────────
+// Evaluation labels (TP/FP/FN/TN/WF/BL) are stored in localStorage so they
+// survive page refreshes within a validation session. Only evaluation metadata
+// is stored — flag values, risk scores, and cohort labels tied to patient IDs.
+// No raw vital data is stored. Storage key is versioned so schema changes
+// in future releases do not silently load incompatible data.
+//
+// LIMITATION: localStorage has no automatic expiry. Data persists until the
+// user explicitly clears it (Evaluation tab → Clear All) or clears browser
+// storage. This is acceptable for synthetic-data validation. It MUST be
+// replaced with server-side session storage before any real-data use.
+//
+// Storage budget: Each evaluation record is ~300 bytes. 1000 evaluations ≈ 300 KB,
+// well within the 5 MB localStorage limit.
+
+const STORAGE_KEY     = 'wrm_evals_v1';        // versioned key — bump on schema change
+const STORAGE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms — stale data auto-cleared
+
+function loadEvals() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // Auto-expire if the stored session is older than STORAGE_MAX_AGE
+    if (parsed._saved_at && (Date.now() - parsed._saved_at) > STORAGE_MAX_AGE) {
+      localStorage.removeItem(STORAGE_KEY);
+      console.info('[wrm] Evaluation storage expired and cleared (>7 days old).');
+      return {};
+    }
+    const { _saved_at, _record_count, ...evals } = parsed; // strip metadata fields
+    return evals;
+  } catch (e) {
+    console.warn('[wrm] Could not load evaluations from localStorage:', e);
+    return {};
+  }
+}
+
+function saveEvals() {
+  try {
+    const payload = {
+      ...evaluations,
+      _saved_at:     Date.now(),
+      _record_count: Object.keys(evaluations).length,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    // QuotaExceededError or storage disabled — non-fatal, warn in console only
+    console.warn('[wrm] Could not save evaluations to localStorage:', e);
+  }
+}
+
+function clearEvalsFromStorage() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+}
+
+let evaluations = loadEvals();
+
+// Show a non-blocking banner if evaluations were restored from a previous session
+function maybeShowStorageBanner() {
+  const count = Object.keys(evaluations).length;
+  if (count === 0) return;
+  const banner = document.getElementById('storageBanner');
+  if (banner) {
+    banner.textContent = `↩ ${count} evaluation${count !== 1 ? 's' : ''} restored from previous session. ` +
+      `Use Evaluation → Clear All to reset.`;
+    banner.style.display = 'block';
+    setTimeout(() => { banner.style.display = 'none'; }, 8000);
+  }
+}
+
+// ── PAGE SWITCHING ─────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'eval') renderEvalPage();
+}
+
+// ── FILE LOADERS ───────────────────────────────────────────────────────────
+function _lockGroup(groupId, reason) {
+  const g = document.getElementById(groupId);
+  g.style.opacity = '0.4';
+  g.style.pointerEvents = 'none';
+  g.title = reason;
+}
+function _unlockGroup(groupId) {
+  const g = document.getElementById(groupId);
+  g.style.opacity = '';
+  g.style.pointerEvents = '';
+  g.title = '';
+}
+function clearFile(which) {
+  if (which === 'data') {
+    patientData = null;
+    results = [];
+    document.getElementById('dataFile').value = '';
+    document.getElementById('dataFileClear').style.display = 'none';
+    document.getElementById('runBtn').disabled = true;
+    _unlockGroup('resultsFileGroup');
+    renderList();
+    setStatus('Data file cleared.');
+  } else {
+    results = [];
+    document.getElementById('resultsFile').value = '';
+    document.getElementById('resultsFileClear').style.display = 'none';
+    _unlockGroup('dataFileGroup');
+    renderList();
+    setStatus('Results file cleared.');
+  }
+}
+
+document.getElementById('dataFile').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  setStatus('Loading ' + file.name + '...');
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      patientData = JSON.parse(ev.target.result);
+      document.getElementById('runBtn').disabled = false;
+      document.getElementById('dataFileClear').style.display = 'inline-block';
+      _lockGroup('resultsFileGroup', 'Clear the data file first before loading a results file');
+      setStatus('Loaded ' + patientData.patients.length + ' patients. Set hour and click Run Scoring.');
+    } catch(err) { setStatus('Error: ' + err.message); }
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('resultsFile').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      results = JSON.parse(ev.target.result);
+      document.getElementById('resultsFileClear').style.display = 'inline-block';
+      _lockGroup('dataFileGroup', 'Clear the results file first before loading a data file');
+      setStatus('Loaded ' + results.length + ' pre-scored results.');
+      renderList();
+    } catch(err) { setStatus('Error: ' + err.message); }
+  };
+  reader.readAsText(file);
+});
+
+// ── SCORING ENGINE ─────────────────────────────────────────────────────────
+//
+// ⚠ DUAL IMPLEMENTATION — DRIFT RISK
+// ---------------------------------------------------------------------------
+// This JavaScript block is a manual reimplementation of scoring_engine_v1.py.
+// The two implementations are NOT automatically kept in sync. Any change to
+// the Python engine must be manually mirrored here, and vice versa.
+//
+// Known divergence surface (check these first when updating either file):
+//   - Severity tables:     tachySev(), bradySev(), afSev3()         → §4.1
+//   - Persistence factors: tachyPersist(), bradyPersist()           → §4.1
+//   - Activity modifier:   actModV3()                               → §4.1
+//   - Score-100 conditions: inside scorePatientHour() s100 block    → §4.1
+//   - Chronic engine:      computeChronicSignals(), score-100 block → §4.2
+//   - DX modifiers:        dxMod()                                  → §5
+//   - CHF/anxiety guardrails: inside scorePatientHour()             → §5
+//   - Confidence force:    hr_min < 25 or hr_max > 200              → §6
+//   - Floor conditions:    RED/YELLOW blocks in scorePatientHour()  → §6
+//   - Flag resolution:     escalation thresholds                    → §8
+//
+// RECOMMENDED WORKFLOW: Run scoring_engine_v1.py --output results.json and
+// load the pre-scored file via "Results File" input. The JS engine is provided
+// for convenience only and may lag behind the Python implementation.
+//
+// Last known sync: scoring_engine_v1.py RULESET = "v1.0"
+// If you update the Python engine, update this comment with the new ruleset
+// version and date so drift can be detected during review.
+// ---------------------------------------------------------------------------
+
+// ── V1 ACUTE ENGINE FUNCTIONS ─────────────────────────────────────────────
+function tachySev(hr_max) {
+  if(hr_max<120) return 0;
+  if(hr_max<=140) return 40;
+  if(hr_max<=160) return 60;
+  if(hr_max<=180) return 80;
+  return 95;
+}
+function bradySev(hr_min) {
+  if(hr_min>50) return 0;
+  if(hr_min>=45) return 30;
+  if(hr_min>=40) return 60;
+  if(hr_min>=30) return 85;
+  return 95;
+}
+function afSev3(af, hr_max, hr_min) {
+  if(af==='none') return 0;
+  if(af!=='none'&&hr_max>140) return 95;
+  if(af!=='none'&&hr_min<40)  return 95;
+  if(af==='brief')        return 40;
+  if(af==='two_plus')     return 60;
+  if(af==='sustained_5')  return 75;
+  if(af==='sustained_15') return 90;
+  return 0;  // unknown af value — no score
+}
+function tachyPersist(hr_mean, hr_samp) {
+  // Uses hr_mean — hr_max is a single peak, not representative of the full hour
+  let pct=hr_mean<120?0:hr_mean<130?.08:hr_mean<150?.15:hr_mean<165?.30:hr_mean<180?.45:.60;
+  if(hr_samp<5) pct*=.8;
+  return pct<.05?.9:pct<.20?1.0:pct<.50?1.2:1.4;
+}
+function bradyPersist(hr_mean, hr_samp) {
+  // Uses hr_mean — hr_min is the single lowest reading, not % time below threshold
+  let pct=hr_mean>50?0:hr_mean>47?.08:hr_mean>43?.18:hr_mean>35?.38:.65;
+  if(hr_samp<5) pct*=.8;
+  return pct<.05?.9:pct<.20?1.0:pct<.50?1.2:1.4;
+}
+function actModV3(hr_max, hr_min, hr_mean, avg_steps, pred_max, sleep_flag, activity_state) {
+  // activity_state classification takes priority over step-count rules.
+  // Without these, cardio sessions (high HR + low steps on stationary machines)
+  // fire high_hr_sedentary (×1.5) — a 3× error vs vigorous_exercise (×0.5).
+  if(activity_state==='strength') return [.75,'strength_training'];
+  if(activity_state==='cardio')   return [.5, 'cardio_exercise'];
+  if(activity_state==='light')    return [.75,'light_activity'];
+  const pct=pred_max>0?hr_max/pred_max:0;
+  if(hr_max>200&&avg_steps<50)  return [1.5,'high_hr_sedentary_extreme'];
+  if(pct>.85&&avg_steps>150)    return [.5,'vigorous_exercise'];
+  if(pct>.85&&avg_steps>100)    return [.75,'moderate_exercise'];
+  if(pct>.85&&avg_steps<50)     return [1.5,'high_hr_sedentary'];
+  if(hr_max>190&&avg_steps<100) return [1.5,'extreme_tachycardia_rest'];
+  if(hr_mean<50&&avg_steps<10)  return [.75,'brady_rest'];  // hr_mean not hr_min
+  return [1.0,'normal'];
+}
+
+function dxMod(dx, engine) {
+  const m = engine==='acute'
+    ? {chf:1.25,af_history:1.15,anxiety:.85}
+    : {chf:1.2,af_history:1.1,anxiety:.9};
+  if (!dx||!dx.length) return [1.0,'none'];
+  if (dx.every(d=>d==='anxiety')) return [.85,'anxiety'];
+  const up = dx.filter(d=>d!=='anxiety').map(d=>[m[d]||1.0,d]);
+  if (!up.length) return [1.0,'none'];
+  return up.reduce((a,b)=>a[0]>b[0]?a:b);
+}
+function chRHRSev(d){return d<3?0:d<5?25:d<8?45:d<10?65:80;}
+function chHRVSev(p){return p<5?0:p<15?30:60;}
+function chPersist(d){return d<5?.75:d<7?1:d<=14?1.25:1.5;}
+
+function computeChronicSignals(hourly, hourIdx) {
+  // §4.2: Resting filter uses sleep_flag OR avg_steps_per_min < 10 (spec §4.2)
+  const resting = hourly.slice(0,hourIdx+1).filter(h=>
+    (h.sleep_flag || (h.avg_steps_per_min !== undefined && h.avg_steps_per_min < 10))
+    && h.confidence.score>0.3
+  );
+  if (resting.length<24) return {delta_hr:0,pct_hrv:0,chron_days:0,rsq:0,rsq_days:0,baseline_available:false};
+  const byDay={};
+  resting.forEach(h=>{if(!byDay[h.day])byDay[h.day]=[];byDay[h.day].push(h);});
+  const days=Object.keys(byDay).map(Number).sort((a,b)=>a-b);
+  if (days.length<14) return {delta_hr:0,pct_hrv:0,chron_days:0,rsq:0,rsq_days:0,baseline_available:false};
+  const bDays=days.slice(0,14);
+  const hrF =h=>h.hr_mean||h.hr||0;
+  const hrvF=h=>h.hrv_rmssd_daily||h.hrv_rmssd||h.hrv||0;
+  const bHRs=bDays.flatMap(d=>byDay[d].map(h=>hrF(h))).sort((a,b)=>a-b);
+  const bHRVs=bDays.flatMap(d=>byDay[d].map(h=>hrvF(h))).sort((a,b)=>a-b);
+  const rhrBase=bHRs[Math.floor(bHRs.length/2)];
+  const hrvBase=bHRVs[Math.floor(bHRVs.length/2)];
+  const rDays=days.slice(-7);
+  const rHRs=rDays.flatMap(d=>byDay[d].map(h=>hrF(h)));
+  const rHRVs=rDays.flatMap(d=>byDay[d].map(h=>hrvF(h)));
+  const curRHR=rHRs.reduce((a,b)=>a+b,0)/rHRs.length;
+  const curHRV=rHRVs.reduce((a,b)=>a+b,0)/rHRVs.length;
+  const dHR=Math.max(0,curRHR-rhrBase);
+  const pHRV=Math.max(0,(hrvBase-curHRV)/Math.max(hrvBase,1)*100);
+  let sustained=0;
+  for(let i=days.length-1;i>=0;i--){
+    const hrs=byDay[days[i]].map(h=>hrF(h));
+    if(hrs.reduce((a,b)=>a+b,0)/hrs.length>rhrBase+3)sustained++;else break;
+  }
+  let rsq=0,rsq_days=0;
+  if(days.length>=5){
+    const means=days.map(d=>{const h=byDay[d].map(x=>hrF(x));return h.reduce((a,b)=>a+b,0)/h.length;});
+    const n=means.length,xm=(n-1)/2,ym=means.reduce((a,b)=>a+b,0)/n;
+    const ssTot=means.reduce((s,y)=>s+(y-ym)**2,0);
+    const slope=means.reduce((s,y,i)=>s+(i-xm)*(y-ym),0)/means.reduce((s,_,i)=>s+(i-xm)**2,0);
+    if(ssTot>0){const p=means.map((_,i)=>ym+slope*(i-xm));const ssR=means.reduce((s,y,i)=>s+(y-p[i])**2,0);rsq=Math.max(0,1-ssR/ssTot);}
+    rsq_days=slope>0?n:0;
+  }
+  return {delta_hr:dHR,pct_hrv:pHRV,chron_days:sustained,rsq,rsq_days,baseline_available:true,
+    _rhr_base:rhrBase,_hrv_base:hrvBase,_cur_rhr:curRHR,_cur_hrv:curHRV};
+}
+
+function scorePatientHour(patient, hourIdx) {
+  const {static:st,hourly}=patient;
+  const rec=hourly[hourIdx];
+  const dx=st.diagnoses,maxHR=st.predicted_max_hr;
+
+  // ── Field extraction: v1 schema ───────────────────────────────────────
+  const hr_mean   = rec.hr_mean||0;
+  const hr_max    = rec.hr_max||0;
+  const hr_min    = rec.hr_min||0;
+  const hr_samp   = rec.hr_sample_count||8;
+  const steps     = rec.avg_steps_per_min||0;
+  const hrv       = rec.hrv_rmssd_daily||rec.hrv_rmssd||st.baseline_hrv||0;
+  const af        = rec.af_status||'none';
+  const sleep     = rec.sleep_flag||false;
+  const actState  = rec.activity_state||null;
+  let   conf      = rec.confidence.score;
+
+  const rules=[],redR=[],yelR=[];
+  const cs=computeChronicSignals(hourly,hourIdx);
+  const {delta_hr,pct_hrv,chron_days,rsq,rsq_days}=cs;
+
+  // ── CHRONIC ENGINE ────────────────────────────────────────────────────
+  // §4.2: Score-100 hard conditions force NUMERIC score (not just floor)
+  let finalChronicPre;
+  let chronicScore100=false,chronicScore100Reason=null;
+  if(delta_hr>8&&chron_days>7)           {chronicScore100=true;chronicScore100Reason='dHR>8+>7d';}
+  else if(pct_hrv>20&&chron_days>10)     {chronicScore100=true;chronicScore100Reason='HRV>20%+>10d';}
+  else if(rsq>.8&&rsq_days>5)            {chronicScore100=true;chronicScore100Reason='R2>0.8+>5d';}
+
+  if(chronicScore100){
+    finalChronicPre=100;
+    rules.push('chronic_score100:'+chronicScore100Reason);
+  } else {
+    const rhrSev2=chRHRSev(delta_hr),hrvSev2=chHRVSev(pct_hrv);
+    let chronRaw=.55*rhrSev2+.45*hrvSev2;
+    if(rsq>.4&&rsq_days>=5){chronRaw+=10;rules.push('R2_bonus');}
+    const cp=chPersist(chron_days);
+    const chronTA=Math.min(100,chronRaw*cp);
+    const [dxC]=dxMod(dx,'chronic');
+    finalChronicPre=chronTA*dxC;
+  }
+
+  // ── ACUTE: Score-100 hard conditions ─────────────────────────────────
+  // Specific combined conditions checked before generic (correct ordering)
+  let s100=false,s100r=null;
+  if(hr_max>200&&af!=='none')      {s100=true;s100r='hr_max>200+AF';}
+  else if(hr_max>200&&steps<50)    {s100=true;s100r='hr_max>200+steps<50';}
+  else if(hr_max>200)              {s100=true;s100r='hr_max>200';}
+  else if(hr_min<25)               {s100=true;s100r='hr_min<25';}
+  else if(hr_max<30)               {s100=true;s100r='hr_max<30';}
+  else if(hr_min>180)              {s100=true;s100r='hr_min>180';}
+  if(s100){rules.push('score100:'+s100r);}
+
+  // §6: Force confidence=1.0 for hr_min<25 OR hr_max>200
+  if(hr_min<25||hr_max>200){conf=1.0;rules.push('conf_forced_1');}
+
+  // ── ACUTE: severity ───────────────────────────────────────────────────
+  let acutePre;
+  if(s100){
+    acutePre=100;
+  } else {
+    const ts=tachySev(hr_max),bs=bradySev(hr_min);
+    const afs=afSev3(af,hr_max,hr_min);
+    const acute_base=Math.max(ts,bs,afs);
+    const persistence=ts>=bs&&ts>=afs ? tachyPersist(hr_mean,hr_samp) : bradyPersist(hr_mean,hr_samp);
+    const [am,amLbl]=actModV3(hr_max,hr_min,hr_mean,steps,maxHR,sleep,actState);
+    acutePre=Math.min(100,acute_base*persistence*am);
+  }
+  const [dxA]=dxMod(dx,'acute');
+  acutePre*=dxA;
+
+  // §5 CHF guardrail: forces NUMERIC acute score to 100
+  if(dx.includes('chf')){
+    if(af==='sustained_15'||af==='two_plus'){
+      acutePre=100;
+      rules.push('chf_guardrail:'+(af==='sustained_15'?'sustained_AF>15':'2+AF+CHF'));
+    }
+  }
+
+  // §5 Anxiety guardrail
+  if(dx.includes('anxiety')){
+    if(hr_max>190){acutePre=Math.max(acutePre,90);rules.push('anxiety:hr>190');}
+    else if(hr_min<35){acutePre=Math.max(acutePre,90);rules.push('anxiety:hr<35');}
+    else if(af!=='none'&&hr_max>160){acutePre=Math.max(acutePre,90);rules.push('anxiety:AF+hr>160');}
+  }
+
+  // ── Final risk (cap after confidence) ─────────────────────────────────
+  const acuteRisk   = Math.min(100, acutePre  * conf);
+  const chronicRisk = Math.min(100, finalChronicPre * conf);
+
+  // ── Floor conditions ──────────────────────────────────────────────────
+  if(hr_max>200&&af!=='none')       redR.push('hr_max>200+AF');
+  else if(hr_max>200&&steps<50)    redR.push('hr_max>200+steps<50');
+  else if(hr_max>200)              redR.push('hr_max>200');
+  if(hr_min<25)                    redR.push('hr_min<25');
+  if(hr_max<30)                     redR.push('hr_max<30');
+  if(hr_min>180)                   redR.push('hr_min>180');
+  if(af==='sustained_15')          redR.push('sustained_AF>15min');
+  if(af==='two_plus'&&dx.includes('chf')) redR.push('2+AF+CHF');
+  if(delta_hr>8&&chron_days>7)     redR.push('dHR>8+>7d');
+  if(pct_hrv>20&&chron_days>10)    redR.push('HRV>20%+>10d');
+  if(rsq>.8&&rsq_days>5)           redR.push('R2>0.8+>5d');
+
+  if(hr_max>180&&steps<50)          yelR.push('hr_max>180+steps<50');
+  if(hr_max>180&&af!=='none')       yelR.push('hr_max>180+AF');
+  if(hr_min<35)                    yelR.push('hr_min<35');
+  if(af==='sustained_5')           yelR.push('sustained_AF>5min');
+  if(af==='two_plus'&&dx.includes('chf')) yelR.push('2+AF+CHF');
+  if(delta_hr>5&&chron_days>5)     yelR.push('dHR>5+>5d');
+  if(pct_hrv>15&&chron_days>7)     yelR.push('HRV>15%+>7d');
+  if(rsq>.6&&rsq_days>5)           yelR.push('R2>0.6+>5d');
+
+  // §8: Escalation policy — YELLOW ceiling explicitly enforced at 60–70
+  let flag,floorApplied=null;
+  if(redR.length>0&&conf<0.2){flag='INSUFFICIENT';}
+  else{
+    if     (acuteRisk>85&&conf>.6)                                   flag='CRITICAL';
+    else if(acuteRisk>85)                                             flag='RED';
+    else if(acuteRisk>=70||chronicRisk>80)                            flag='RED';
+    else if((acuteRisk>=60&&acuteRisk<70)||(chronicRisk>=60&&chronicRisk<=80)) flag='YELLOW';
+    else                                                              flag='GREEN';
+    const ord=['GREEN','YELLOW','RED','CRITICAL'];
+    if(redR.length>0&&conf>=.2&&ord.indexOf(flag)<ord.indexOf('RED')){
+      flag='RED';floorApplied='RED:'+redR[0];}
+    if(yelR.length>0&&conf>=.2&&!['RED','CRITICAL'].includes(flag)&&ord.indexOf(flag)<ord.indexOf('YELLOW')){
+      flag='YELLOW';floorApplied='YELLOW:'+yelR[0];}
+  }
+
+  return {
+    patient_id:patient.patient_id,cohort:patient.cohort,
+    hour_idx:hourIdx,timestamp:rec.timestamp,day:rec.day,hour:rec.hour,
+    ruleset: 'v1.0',
+    inputs:{
+      hr_mean:+hr_mean.toFixed(1), hr_max, hr_min, hr_sample_count:hr_samp,
+      avg_steps_per_min:steps, af, sleep, hrv:+hrv.toFixed(1),
+      conf:+conf.toFixed(3), diagnoses:dx, age:st.age,
+      activity_state:actState,
+    },
+    chronic_signals:{
+      delta_hr:+delta_hr.toFixed(2),pct_hrv:+pct_hrv.toFixed(2),
+      chron_days,rsq:+rsq.toFixed(3),rsq_days,baseline_available:cs.baseline_available,
+      chronic_score100:chronicScore100,chronic_score100_reason:chronicScore100Reason,
+      _rhr_base:cs._rhr_base,_hrv_base:cs._hrv_base,_cur_rhr:cs._cur_rhr,_cur_hrv:cs._cur_hrv
+    },
+    scores:{
+      acute_pre_conf:+acutePre.toFixed(1),chronic_pre_conf:+finalChronicPre.toFixed(1),
+      acute_risk:+acuteRisk.toFixed(1),chronic_risk:+chronicRisk.toFixed(1),confidence:+conf.toFixed(3)
+    },
+    acute_breakdown:{
+      tachy_sev:tachySev(hr_max),
+      brady_sev:bradySev(hr_min),
+      af_sev:afSev3(af,hr_max,hr_min),
+      score100:s100,score100_reason:s100r
+    },
+    flag,flag_source:floorApplied?'floor':'formula',floor_applied:floorApplied,
+    rules_triggered:rules,red_floors:redR,yellow_floors:yelR,
+    ground_truth:{true_acute:rec.true_acute_event??null,true_chronic:rec.true_chronic_event??null},
+  };
+}
+
+// ── RUN SCORING ───────────────────────────────────────────────────────────
+function runScoring() {
+  if (!patientData) { setStatus('No data loaded.'); return; }
+  const h = parseInt(document.getElementById('hourInput').value);
+  if (isNaN(h)||h<0||h>719) { setStatus('Hour must be 0–719.'); return; }
+  const cohortF = document.getElementById('cohortFilter').value;
+  document.getElementById('runBtn').disabled = true;
+  setStatus('Scoring hour ' + h + '...');
+  setTimeout(() => {
+    let pts = patientData.patients;
+    if (cohortF) pts = pts.filter(p => p.cohort === cohortF);
+    results = pts.map(p => scorePatientHour(p, h));
+    const c = flagCounts();
+    const day=Math.floor(h/24)+1,hr2=h%24;
+    setStatus('Hour '+h+' (Day '+day+', '+String(hr2).padStart(2,'0')+':00) — '+results.length+' patients | '+
+      (c.CRITICAL||0)+' CRIT · '+(c.RED||0)+' RED · '+(c.YELLOW||0)+' YLW · '+(c.GREEN||0)+' GRN');
+    renderList();
+    document.getElementById('runBtn').disabled = false;
+  }, 10);
+}
+
+function flagCounts() {
+  const c={};
+  results.forEach(r=>{c[r.flag]=(c[r.flag]||0)+1;});
+  return c;
+}
+
+// ── EVALUATION RECORDING ──────────────────────────────────────────────────
+function evalKey(patientId, hourIdx) { return patientId + '@h' + hourIdx; }
+
+function setEval(patientId, label) {
+  const r = results.find(x => x.patient_id === patientId);
+  if (!r) return;
+  const key = evalKey(patientId, r.hour_idx);
+  if (evaluations[key]?.label === label) {
+    delete evaluations[key]; // toggle off
+  } else {
+    evaluations[key] = {
+      label, flag: r.flag, cohort: r.cohort,
+      patient_id: patientId, hour_idx: r.hour_idx,
+      scores: r.scores, chronic_signals: r.chronic_signals,
+      inputs: r.inputs, floor_applied: r.floor_applied,
+      flag_source: r.flag_source,
+    };
+  }
+  saveEvals();
+  renderList();
+  if (selectedId === patientId) renderDetail(r);
+}
+
+// ── RENDER LIST ───────────────────────────────────────────────────────────
+function renderList() {
+  const body = document.getElementById('patientListBody');
+  body.innerHTML = '';
+  const order = {CRITICAL:0,RED:1,YELLOW:2,GREEN:3,INSUFFICIENT:4};
+  const sorted = [...results].sort((a,b)=>(order[a.flag]??5)-(order[b.flag]??5));
+  const filtered = flagFilter ? sorted.filter(r=>r.flag===flagFilter) : sorted;
+  document.getElementById('patientCount').textContent = filtered.length+'/'+results.length;
+
+  filtered.forEach(r => {
+    const ev = evaluations[evalKey(r.patient_id, r.hour_idx)];
+    const item = document.createElement('div');
+    item.className = 'patient-item' + (r.patient_id===selectedId?' selected':'');
+    item.onclick = () => selectPatient(r.patient_id);
+    const evalBadge = ev
+      ? `<span class="eval-badge ${ev.label}">${ev.label.toUpperCase()}</span>`
+      : '';
+    item.innerHTML = `
+      <div class="flag-dot ${esc(r.flag)}"></div>
+      <div class="patient-info">
+        <div class="patient-id">${esc(r.patient_id)}</div>
+        <div class="patient-sub">${esc(r.cohort).replace(/_/g,' ')} · Age ${esc(r.inputs.age)}</div>
+        ${evalBadge}
+      </div>
+      <div class="patient-scores">
+        <div>${r.scores.acute_risk.toFixed(0)}a</div>
+        <div>${r.scores.chronic_risk.toFixed(0)}c</div>
+      </div>`;
+    body.appendChild(item);
+  });
+}
+
+function filterFlag(flag) {
+  flagFilter = flag;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  const sel = flag
+    ? document.querySelector(`.filter-btn.${flag.toLowerCase()}`)
+    : document.querySelector('.filter-btn.all');
+  if (sel) sel.classList.add('active');
+  renderList();
+}
+
+// ── SELECT PATIENT ────────────────────────────────────────────────────────
+function selectPatient(id) {
+  selectedId = id;
+  document.querySelectorAll('.patient-item').forEach(el=>{
+    el.classList.toggle('selected', el.querySelector('.patient-id')?.textContent===id);
+  });
+  const r = results.find(x=>x.patient_id===id);
+  if (r) renderDetail(r);
+}
+
+
+
+// ── CALC BREAKDOWN BUILDERS ────────────────────────────────────────────────
+function step(label, val, note, cls) {
+  return '<div class="calc-step' + (cls ? ' ' + cls : '') + '">' +
+    '<span class="calc-step-label">' + label + '</span>' +
+    '<span class="calc-step-val">' + val + '</span>' +
+    (note ? '<span class="calc-step-note">' + note + '</span>' : '') +
+    '</div>';
+}
+function calcWrap(rows) {
+  return '<div class="calc-formula">' + rows.join('') + '</div>';
+}
+
+function buildAcuteCalc(r, inp, s, cs) {
+  var ts = r.acute_breakdown ? r.acute_breakdown.tachy_sev : tachySev(inp.hr_max);
+  var bs = r.acute_breakdown ? r.acute_breakdown.brady_sev : bradySev(inp.hr_min);
+  var afs = r.acute_breakdown ? r.acute_breakdown.af_sev : afSev3(inp.af, inp.hr_max, inp.hr_min);
+  var base = Math.max(ts, bs, afs);
+  var dominantIs = ts>=bs&&ts>=afs?'tachy':bs>=afs?'brady':'af';
+  var persist = dominantIs==='tachy' ? tachyPersist(inp.hr_mean,inp.hr_sample_count||8)
+                                     : bradyPersist(inp.hr_mean,inp.hr_sample_count||8);
+  var amRes = actModV3(inp.hr_max,inp.hr_min,inp.hr_mean,inp.avg_steps_per_min||0,
+                       202-(inp.age||50),inp.sleep,inp.activity_state);
+  var am=amRes[0],amLabel=amRes[1];
+  var dxRes=dxMod(inp.diagnoses,'acute');
+  var dxA=dxRes[0],dxAN=dxRes[1];
+  var s100fired = r.acute_breakdown && r.acute_breakdown.score100;
+  var rows=[];
+  rows.push(step('hr_max severity (tachy)', ts, 'hr_max='+inp.hr_max+' bpm', ts>0?'highlight':''));
+  rows.push(step('hr_min severity (brady)', bs, 'hr_min='+inp.hr_min+' bpm', bs>0?'highlight':''));
+  rows.push(step('AF severity', afs, inp.af, afs>0?'highlight':''));
+  rows.push(step('Base (dominant: '+dominantIs+')', base, '', ''));
+  if(s100fired){
+    rows.push(step('Score-100 override','→ 100',r.acute_breakdown.score100_reason||'','critical-step'));
+  } else {
+    rows.push(step('Persistence factor','×'+persist.toFixed(2),
+      dominantIs==='tachy'?'% time above threshold':'% time below threshold',''));
+    rows.push(step('Activity modifier','×'+am.toFixed(2),amLabel,am!==1?'warn-step':''));
+  }
+  rows.push(step('DX multiplier','×'+dxA.toFixed(2),dxAN,dxA!==1?'highlight':''));
+  rows.push(step('Pre-confidence score',s.acute_pre_conf.toFixed(1)+(s.acute_pre_conf>100?' → capped':''),'','highlight'));
+  rows.push(step('× Confidence','×'+s.confidence.toFixed(3),'',s.confidence<0.4?'danger-step':''));
+  rows.push(step('= Final acute risk',s.acute_risk.toFixed(1),'','critical-step'));
+  return calcWrap(rows);
+}
+
+function buildChronicCalc(r, inp, s, cs) {
+  // Check if chronic score-100 was applied
+  if (cs.chronic_score100) {
+    var rows = [];
+    rows.push(step('CHRONIC SCORE-100','→ 100',cs.chronic_score100_reason||'','critical-step'));
+    rows.push(step('DX multiplier','N/A (score already 100)','',''));
+    rows.push(step('Pre-confidence score', s.chronic_pre_conf.toFixed(1),'','highlight'));
+    rows.push(step('× Confidence','×'+s.confidence.toFixed(3),'',s.confidence<0.4?'danger-step':''));
+    rows.push(step('= Final chronic risk',s.chronic_risk.toFixed(1),'','critical-step'));
+    return calcWrap(rows);
+  }
+  var rhrSev2 = chRHRSev(cs.delta_hr);
+  var hrvSev2 = chHRVSev(cs.pct_hrv);
+  var rawC = 0.55 * rhrSev2 + 0.45 * hrvSev2;
+  var r2b = cs.rsq > 0.4 && cs.rsq_days >= 5;
+  var rawWithBonus = rawC + (r2b ? 10 : 0);
+  var cp2 = chPersist(cs.chron_days);
+  var preCP = rawWithBonus * cp2;
+  var dxRes = dxMod(inp.diagnoses, 'chronic');
+  var dxC2 = dxRes[0], dxCN2 = dxRes[1];
+  var rows = [];
+  rows.push(step('RHR severity (×0.55)', rhrSev2 + ' → ' + (rhrSev2 * 0.55).toFixed(1),
+    'ΔHR=' + cs.delta_hr.toFixed(1) + ' bpm', rhrSev2 > 0 ? 'highlight' : ''));
+  rows.push(step('HRV severity (×0.45)', hrvSev2 + ' → ' + (hrvSev2 * 0.45).toFixed(1),
+    '%ΔHRV=' + cs.pct_hrv.toFixed(1) + '%', hrvSev2 > 0 ? 'highlight' : ''));
+  rows.push(step('Raw chronic score', rawC.toFixed(1), '', ''));
+  rows.push(step('R² trend bonus', r2b ? '+10 → ' + rawWithBonus.toFixed(1) : '+0 (not met)',
+    'R²=' + cs.rsq.toFixed(3) + (r2b ? ', ' + cs.rsq_days + 'd' : ''), r2b ? 'warn-step' : ''));
+  rows.push(step('Persistence multiplier', '×' + cp2.toFixed(2), cs.chron_days + ' sustained days',
+    cp2 > 1 ? 'warn-step' : ''));
+  rows.push(step('Pre-DX score', preCP.toFixed(1) + (preCP > 100 ? ' → capped at 100' : ''), '', ''));
+  rows.push(step('DX multiplier', '×' + dxC2.toFixed(2), dxCN2, dxC2 !== 1 ? 'highlight' : ''));
+  rows.push(step('Pre-confidence score', s.chronic_pre_conf.toFixed(1), '', 'highlight'));
+  rows.push(step('× Confidence', '×' + s.confidence.toFixed(3), '', s.confidence < 0.4 ? 'danger-step' : ''));
+  rows.push(step('= Final chronic risk', s.chronic_risk.toFixed(1), '', 'critical-step'));
+  return calcWrap(rows);
+}
+
+function buildConfCalc(r, inp, s, cs) {
+  var raw = (inp.conf / 1.2).toFixed(3);
+  var suppression = inp.conf >= 0.7 ? 'minimal suppression' :
+    inp.conf >= 0.4 ? 'moderate suppression' :
+    inp.conf >= 0.2 ? 'significant suppression' : 'INSUFFICIENT threshold';
+  var forcedNote = (inp.hr_min!==undefined&&inp.hr_min<25)||inp.hr_max>200 ? 'forced 1.0 (hr_min<25 or hr_max>200 — §6)' : '';
+  var rows = [];
+  rows.push(step('Formula', '(cov×0.6) + (comp×0.3) + (rec×0.1)', '', ''));
+  rows.push(step('Raw sum (est.)', raw, 'before ×1.2 boost', ''));
+  rows.push(step('×1.2 boost → cap 1.0', inp.conf.toFixed(3), forcedNote, 'highlight'));
+  rows.push(step('Suppression effect', 'scores × ' + inp.conf.toFixed(3), suppression,
+    inp.conf < 0.2 ? 'danger-step' : inp.conf < 0.4 ? 'warn-step' : ''));
+  return calcWrap(rows);
+}
+
+function toggleCalc(id) {
+  const btn = document.getElementById('calc-toggle-'+id);
+  const body = document.getElementById('calc-body-'+id);
+  if (!btn||!body) return;
+  btn.classList.toggle('open');
+  body.classList.toggle('open');
+}
+// ── RENDER DETAIL ─────────────────────────────────────────────────────────
+function renderDetail(r) {
+  const panel = document.getElementById('detailPanel');
+  const s = r.scores, cs = r.chronic_signals, inp = r.inputs;
+  const flag = r.flag;
+  const ev = evaluations[evalKey(r.patient_id, r.hour_idx)];
+
+  const sc = v => v>85?'critical':v>70?'danger':v>55?'warning':'';
+  const bc = v => v>85?'#f97316':v>70?'#ef4444':v>55?'#eab308':'#22c55e';
+  const cc = v => v>.7?'#22c55e':v>.4?'#eab308':'#ef4444';
+
+  const afL = {none:'—',brief:'Brief',two_plus:'2+ detections',
+               sustained_5:'Sustained >5 min',sustained_15:'Sustained >15 min'};
+
+  // Floor note
+  const floorNote = r.floor_applied
+    ? `<div class="floor-note">⚡ Flag elevated by floor condition: ${r.floor_applied}</div>`
+    : '';
+
+  // Eval buttons
+  const evLabel = ev?.label;
+  const evalBtns = `
+    <div class="eval-buttons">
+      <span class="eval-lbl">Evaluate:</span>
+      <button class="eval-btn tp-btn ${evLabel==='tp'?'active':''}" onclick="setEval('${esc(r.patient_id)}','tp')">✓ True Positive</button>
+      <button class="eval-btn fp-btn ${evLabel==='fp'?'active':''}" onclick="setEval('${esc(r.patient_id)}','fp')">✗ False Positive</button>
+      <button class="eval-btn fn-btn ${evLabel==='fn'?'active':''}" onclick="setEval('${esc(r.patient_id)}','fn')">⚠ False Negative</button>
+      <button class="eval-btn tn-btn ${evLabel==='tn'?'active':''}" onclick="setEval('${esc(r.patient_id)}','tn')">— True Negative</button>
+      <button class="eval-btn wf-btn ${evLabel==='wf'?'active':''}" onclick="setEval('${esc(r.patient_id)}','wf')">⊗ Wrong Flag</button>
+      <button class="eval-btn bl-btn ${evLabel==='bl'?'active':''}" onclick="setEval('${esc(r.patient_id)}','bl')">◈ Borderline</button>
+    </div>`;
+
+  const rT = (t,c)=>`<span class="rule-tag ${c}">${t}</span>`;
+  const ruleTags = (r.rules_triggered||[]).map(t=>rT(t,t.includes('score100')||t.includes('anxiety:')?'critical':'info')).join('');
+  const rfTags = (r.red_floors||[]).map(t=>rT(t,'floor-red')).join('');
+  const yfTags = (r.yellow_floors||[]).map(t=>rT(t,'floor-yellow')).join('');
+
+  // %ΔHRV: show direction explicitly
+  const hrvDelta = cs.pct_hrv;
+  const hrvDir = hrvDelta >= 0 ? '▼' : '▲';
+  const hrvClass = hrvDelta > 20 ? 'danger' : hrvDelta > 15 ? 'warning' : '';
+
+  panel.innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-id">${esc(r.patient_id)}</div>
+        <div class="detail-meta">
+          <span class="cohort-pill">${esc(r.cohort).replace(/_/g,' ')}</span>
+          &nbsp; Age ${esc(inp.age)} · Dx: ${esc(inp.diagnoses.join(', '))||'none'}
+          &nbsp;·&nbsp; Day ${esc(r.day)}, ${String(r.hour).padStart(2,'0')}:00 &nbsp;·&nbsp; Hour ${esc(r.hour_idx)}
+        </div>
+        ${evalBtns}
+      </div>
+      <div style="text-align:right">
+        <div class="flag-badge ${esc(flag)}">${esc(flag)}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--accent);margin-top:3px">${esc(r.ruleset)||'—'}</div>
+        ${r.flag_source==='floor'
+          ? `<div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--yellow);margin-top:2px">FLOOR ELEVATED</div>`
+          : `<div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px">FORMULA</div>`}
+      </div>
+    </div>
+    ${floorNote}
+
+    <section-title>Vital Inputs</section-title>
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-label">HR Mean</div>
+        <div class="card-value ${sc(tachySev(inp.hr_max)||bradySev(inp.hr_min))}">${inp.hr_mean}</div>
+        <div class="card-sub">max=${inp.hr_max} · min=${inp.hr_min} · ${inp.hr_sample_count||'—'} samples</div>
+      </div>
+      <div class="card">
+        <div class="card-label">AF Status</div>
+        <div class="card-value" style="font-size:13px;padding-top:6px">${afL[inp.af]||inp.af}</div>
+        <div class="card-sub">${inp.af==='none'?'No detection':'⚡ Detected'}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg Steps / Min</div>
+        <div class="card-value">${inp.avg_steps_per_min||inp.steps||0}</div>
+        <div class="card-sub">${inp.sleep?'😴 Sleep':(inp.avg_steps_per_min||inp.steps||0)>100?'Active':'Low activity'}${inp.activity_state?' · '+inp.activity_state:''}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">HRV RMSSD</div>
+        <div class="card-value">${(inp.hrv||0).toFixed(1)}</div>
+        <div class="card-sub">ms · nightly resting value</div>
+      </div>
+    </div>
+
+    <section-title>Risk Scores</section-title>
+    <div class="grid-2">
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:12px 14px">
+          <div class="card-label">Acute Risk</div>
+          <div class="card-value ${sc(s.acute_risk)}">${s.acute_risk.toFixed(1)}</div>
+          <div class="card-sub">Pre-confidence: ${s.acute_pre_conf.toFixed(1)}</div>
+          <div class="score-bar-wrap"><div class="score-bar-track">
+            <div class="score-bar-fill" style="width:${s.acute_risk}%;background:${bc(s.acute_risk)}"></div>
+          </div></div>
+        </div>
+        <button class="calc-toggle" id="calc-toggle-acute" onclick="toggleCalc('acute')">
+          Calculation breakdown <span class="chevron">▼</span>
+        </button>
+        <div class="calc-body" id="calc-body-acute">
+          ${buildAcuteCalc(r,inp,s,cs)}}
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:12px 14px">
+          <div class="card-label">Chronic Risk</div>
+          <div class="card-value ${sc(s.chronic_risk)}">${s.chronic_risk.toFixed(1)}</div>
+          <div class="card-sub">Pre-confidence: ${s.chronic_pre_conf.toFixed(1)}${s.chronic_pre_conf>100?' (CHF mult pushes above 100)':''}</div>
+          <div class="score-bar-wrap"><div class="score-bar-track">
+            <div class="score-bar-fill" style="width:${s.chronic_risk}%;background:${bc(s.chronic_risk)}"></div>
+          </div></div>
+        </div>
+        <button class="calc-toggle" id="calc-toggle-chronic" onclick="toggleCalc('chronic')">
+          Calculation breakdown <span class="chevron">▼</span>
+        </button>
+        <div class="calc-body" id="calc-body-chronic">
+          ${buildChronicCalc(r,inp,s,cs)}}
+        </div>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
+      <div style="padding:12px 14px">
+        <div class="card-label">Confidence</div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div class="card-value" style="color:${cc(s.confidence)}">${(s.confidence*100).toFixed(0)}%</div>
+          <div style="flex:1">
+            <div class="score-bar-track"><div class="score-bar-fill"
+              style="width:${s.confidence*100}%;background:${cc(s.confidence)}"></div></div>
+            <div class="card-sub" style="margin-top:4px">Coverage · Completeness · Recency
+              ${s.confidence<0.2?'&nbsp;<span style="color:var(--red)">⚠ Below 0.2 — INSUFFICIENT threshold</span>':''}
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="calc-toggle" id="calc-toggle-conf" onclick="toggleCalc('conf')">
+        Calculation breakdown <span class="chevron">▼</span>
+      </button>
+      <div class="calc-body" id="calc-body-conf">
+        ${buildConfCalc(r,inp,s,cs)}}
+      </div>
+    </div>
+
+    <section-title>Chronic Engine</section-title>
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-label">ΔHR (7d mean)</div>
+        <div class="card-value ${cs.delta_hr>8?'danger':cs.delta_hr>5?'warning':''}">${cs.delta_hr.toFixed(1)}</div>
+        <div class="card-sub">bpm above baseline${cs._rhr_base?' (base: '+cs._rhr_base.toFixed(0)+')':''}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">%ΔHRV</div>
+        <div class="card-value ${hrvClass}">${hrvDir} ${Math.abs(hrvDelta).toFixed(1)}%</div>
+        <div class="card-sub">${cs._hrv_base?'baseline: '+cs._hrv_base.toFixed(1):'baseline not set'}
+          ${cs._cur_hrv?' · current: '+cs._cur_hrv.toFixed(1):''}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sustained Days</div>
+        <div class="card-value ${cs.chron_days>7?'danger':cs.chron_days>5?'warning':''}">${cs.chron_days}</div>
+        <div class="card-sub">above-baseline streak</div>
+      </div>
+      <div class="card">
+        <div class="card-label">R² Trend</div>
+        <div class="card-value ${cs.rsq>.8?'danger':cs.rsq>.6?'warning':''}">${cs.rsq.toFixed(3)}</div>
+        <div class="card-sub">${cs.rsq_days} day${cs.rsq_days===1?'':'s'} upward slope</div>
+      </div>
+    </div>
+
+    ${ruleTags ? `<section-title>Rules Triggered</section-title>
+    <div class="card" style="margin-bottom:12px"><div class="rules-list">${ruleTags}</div></div>` : ''}
+
+    ${(rfTags||yfTags) ? `<section-title>Floor Conditions${r.floor_applied?' — flag was elevated':' — flag not elevated (already at/above floor)'}</section-title>
+    <div class="card" style="margin-bottom:12px">
+      <div class="rules-list">${rfTags}${yfTags}</div>
+      ${r.floor_applied?`<div class="floor-note" style="margin-top:8px">Active floor: ${r.floor_applied}</div>`:''}
+    </div>` : ''}
+
+    ${r.audit_log && r.audit_log.length ? `
+    <section-title>Audit Log (§9 — Decision Reasoning)</section-title>
+    <div class="card" style="margin-bottom:12px">
+      <button class="calc-toggle" id="calc-toggle-audit" onclick="toggleCalc('audit')" style="border-radius:4px;width:100%">
+        Show step-by-step engine log <span class="chevron">▼</span>
+      </button>
+      <div class="calc-body" id="calc-body-audit">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-mid);padding:10px 14px;line-height:1.8;white-space:pre-wrap;">${r.audit_log.map(l=>l.replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('\n')}</div>
+      </div>
+    </div>` : ''}
+  `;
+}
+
+// ── EVAL PAGE ─────────────────────────────────────────────────────────────
+function renderEvalPage() {
+  const content = document.getElementById('evalPageContent');
+  const evals = Object.values(evaluations);
+  if (!evals.length) {
+    content.innerHTML = `<div class="no-eval-state">
+      <div style="font-size:28px;opacity:.2;margin-bottom:12px">◈</div>
+      No evaluation data yet.<br>
+      <span style="font-size:10px;color:var(--text-dim)">Score patients, then use the TP / FP / FN / TN buttons to record evaluations.</span>
+    </div>`; return;
+  }
+
+  const tp = evals.filter(e=>e.label==='tp').length;
+  const fp = evals.filter(e=>e.label==='fp').length;
+  const fn = evals.filter(e=>e.label==='fn').length;
+  const tn = evals.filter(e=>e.label==='tn').length;
+  const wf = evals.filter(e=>e.label==='wf').length;
+  const bl = evals.filter(e=>e.label==='bl').length;
+  const total = evals.length;
+
+  // Core metrics
+  const sensitivity   = tp+fn>0 ? tp/(tp+fn) : null;
+  const specificity   = tn+fp>0 ? tn/(tn+fp) : null;
+  const fpr           = tn+fp>0 ? fp/(tn+fp) : null;
+  const ppv           = tp+fp>0 ? tp/(tp+fp) : null;
+  const npv           = tn+fn>0 ? tn/(tn+fn) : null;
+
+  // Anxiety FP rate
+  const axFlagged = evals.filter(e=>e.inputs?.diagnoses?.includes('anxiety')&&['YELLOW','RED','CRITICAL'].includes(e.flag));
+  const axFP = axFlagged.filter(e=>e.label==='fp').length;
+  const axFPRate = axFlagged.length>0 ? axFP/axFlagged.length : null;
+
+  // CHF deterioration detection
+  const chfEvals = evals.filter(e=>e.cohort==='chf');
+  const chfTP = chfEvals.filter(e=>e.label==='tp').length;
+  const chfDetectRate = chfEvals.length>0 ? chfTP/chfEvals.length : null;
+
+  // Healthy false chronic flags
+  const healthyEvals = evals.filter(e=>e.cohort==='healthy_baseline');
+  const healthyFP = healthyEvals.filter(e=>e.label==='fp').length;
+  const healthyFPRate = healthyEvals.length>0 ? healthyFP/healthyEvals.length : null;
+
+  // Time to detection: for CHF TPs, what day were they detected
+  const chfTPDays = evals.filter(e=>e.cohort==='chf'&&e.label==='tp').map(e=>Math.floor((e.scores?.acute_risk||0)));
+  // We don't have actual day stored — use chronic_signals.chron_days as proxy
+  const chfTPChronDays = evals.filter(e=>e.cohort==='chf'&&e.label==='tp')
+    .map(e=>e.chronic_signals?.chron_days||0).filter(d=>d>0);
+  const meanTimeToDetect = chfTPChronDays.length>0
+    ? chfTPChronDays.reduce((a,b)=>a+b,0)/chfTPChronDays.length : null;
+
+  // Flag distribution
+  const flagDist = {};
+  evals.forEach(e=>{flagDist[e.flag]=(flagDist[e.flag]||0)+1;});
+  const pctRC = total>0 ? (((flagDist.RED||0)+(flagDist.CRITICAL||0))/total*100) : 0;
+  const pctY  = total>0 ? ((flagDist.YELLOW||0)/total*100) : 0;
+  const pctI  = total>0 ? ((flagDist.INSUFFICIENT||0)/total*100) : 0;
+
+  // Floor-elevated flags
+  const floorElevated = evals.filter(e=>e.flag_source==='floor').length;
+  const floorRate = total>0 ? floorElevated/total*100 : 0;
+
+  function pct(v,decimals=1) {
+    if (v===null) return '—';
+    return (v*100).toFixed(decimals)+'%';
+  }
+  function metricColor(v, goodDir='high') {
+    if (v===null) return '';
+    return goodDir==='high' ? (v>.8?'good':v>.5?'warn':'bad') : (v<.2?'good':v<.4?'warn':'bad');
+  }
+  function bar(v, color) {
+    if (v===null) return '';
+    return `<div class="metric-bar"><div class="metric-bar-fill" style="width:${(v*100).toFixed(0)}%;background:${color}"></div></div>`;
+  }
+
+  // Per-patient per-month: evals only covers one hour snapshot
+  // Approximate: if we have counts, alerts fired = flagged evals (not green/insufficient)
+  const flaggedCount = evals.filter(e=>['YELLOW','RED','CRITICAL'].includes(e.flag)).length;
+  const flagsPerPatient = total>0 ? flaggedCount/total : 0;
+
+  content.innerHTML = `
+    <div class="eval-banner">
+      <div class="eval-banner-stat tp"><div class="num">${tp}</div><div class="lbl">True Positive</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat fp"><div class="num">${fp}</div><div class="lbl">False Positive</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat fn"><div class="num">${fn}</div><div class="lbl">False Negative</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat tn"><div class="num">${tn}</div><div class="lbl">True Negative</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat" style="--c:#c084fc"><div class="num" style="color:#c084fc">${wf}</div><div class="lbl">Wrong Flag</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat"><div class="num" style="color:#22d3ee">${bl}</div><div class="lbl">Borderline</div></div>
+      <div class="eval-divider"></div>
+      <div class="eval-banner-stat"><div class="num" style="color:var(--text-mid)">${total}</div><div class="lbl">Total Evaluated</div></div>
+      <div style="margin-left:auto">
+        <button class="run-btn" style="font-size:10px;padding:6px 12px" onclick="clearEvals()">Clear All</button>
+      </div>
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">Sensitivity</div>
+        <div class="metric-value ${metricColor(sensitivity)}">${pct(sensitivity)}</div>
+        <div class="metric-sub">TP / (TP + FN) — True acute flagged / Total acute events</div>
+        ${bar(sensitivity,'#22c55e')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Specificity</div>
+        <div class="metric-value ${metricColor(specificity)}">${pct(specificity)}</div>
+        <div class="metric-sub">TN / (TN + FP) — True negatives / All non-acute</div>
+        ${bar(specificity,'#3b82f6')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">False Positive Rate</div>
+        <div class="metric-value ${metricColor(fpr,'low')}">${pct(fpr)}</div>
+        <div class="metric-sub">FP / (FP + TN) — Unnecessary escalations</div>
+        ${bar(fpr,'#ef4444')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Precision (PPV)</div>
+        <div class="metric-value ${metricColor(ppv)}">${pct(ppv)}</div>
+        <div class="metric-sub">TP / (TP + FP) — Of flagged, how many were real</div>
+        ${bar(ppv,'#22c55e')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Anxiety FP Rate</div>
+        <div class="metric-value ${metricColor(axFPRate,'low')}">${pct(axFPRate)}</div>
+        <div class="metric-sub">${axFP} FP of ${axFlagged.length} anxiety escalations — sympathetic spikes incorrectly escalated</div>
+        ${bar(axFPRate,'#ef4444')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">CHF Detection Rate</div>
+        <div class="metric-value ${metricColor(chfDetectRate)}">${pct(chfDetectRate)}</div>
+        <div class="metric-sub">${chfTP} of ${chfEvals.length} CHF patients correctly flagged — gradual deterioration detection</div>
+        ${bar(chfDetectRate,'#22c55e')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Time to Detection</div>
+        <div class="metric-value ${meanTimeToDetect!==null?(meanTimeToDetect<7?'good':meanTimeToDetect<14?'warn':'bad'):''}">${meanTimeToDetect!==null?meanTimeToDetect.toFixed(1)+' d':'—'}</div>
+        <div class="metric-sub">Mean sustained-days at detection for CHF true positives</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Healthy False Chronic</div>
+        <div class="metric-value ${metricColor(healthyFPRate,'low')}">${pct(healthyFPRate)}</div>
+        <div class="metric-sub">${healthyFP} FP of ${healthyEvals.length} healthy patients — spurious chronic flags</div>
+        ${bar(healthyFPRate,'#ef4444')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Floor-Elevated Flags</div>
+        <div class="metric-value">${floorRate.toFixed(1)}%</div>
+        <div class="metric-sub">${floorElevated} of ${total} flags elevated by floor conditions, not formula</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">% Red / Critical</div>
+        <div class="metric-value ${pctRC>30?'bad':pctRC>15?'warn':'good'}">${pctRC.toFixed(1)}%</div>
+        <div class="metric-sub">${(flagDist.RED||0)} RED + ${(flagDist.CRITICAL||0)} CRITICAL of ${total}</div>
+        ${bar(pctRC/100,'#ef4444')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">% Yellow</div>
+        <div class="metric-value">${pctY.toFixed(1)}%</div>
+        <div class="metric-sub">${flagDist.YELLOW||0} YELLOW of ${total} evaluated</div>
+        ${bar(pctY/100,'#eab308')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">% Insufficient Data</div>
+        <div class="metric-value ${pctI>10?'bad':pctI>5?'warn':'good'}">${pctI.toFixed(1)}%</div>
+        <div class="metric-sub">${flagDist.INSUFFICIENT||0} INSUFFICIENT of ${total}</div>
+        ${bar(pctI/100,'#64748b')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Flags per Patient</div>
+        <div class="metric-value">${flagsPerPatient.toFixed(2)}</div>
+        <div class="metric-sub">${flaggedCount} actionable flags across ${total} evaluated patients (this hour snapshot)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">NPV</div>
+        <div class="metric-value ${metricColor(npv)}">${pct(npv)}</div>
+        <div class="metric-sub">TN / (TN + FN) — Of negatives, how many were truly safe</div>
+        ${bar(npv,'#3b82f6')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">% Wrong Flag</div>
+        <div class="metric-value ${wf/Math.max(total,1)>.15?'bad':wf/Math.max(total,1)>.08?'warn':'good'}" style="color:#c084fc">${total>0?(wf/total*100).toFixed(1)+'%':'—'}</div>
+        <div class="metric-sub">${wf} of ${total} — correct direction, wrong severity level</div>
+        ${bar(wf/Math.max(total,1),'#c084fc')}
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">% Borderline</div>
+        <div class="metric-value" style="color:#22d3ee">${total>0?(bl/total*100).toFixed(1)+'%':'—'}</div>
+        <div class="metric-sub">${bl} of ${total} — cases near threshold, clinically ambiguous</div>
+        ${bar(bl/Math.max(total,1),'#22d3ee')}
+      </div>
+    </div>
+
+    <div class="eval-table-wrap">
+      <div class="eval-table-head">Evaluation Log (${total} records)</div>
+      <table class="eval-tbl">
+        <thead><tr>
+          <th>Patient</th><th>Cohort</th><th>Flag</th><th>Source</th>
+          <th>Eval</th><th>Acute</th><th>Chronic</th><th>ΔHR</th><th>%ΔHRV</th>
+        </tr></thead>
+        <tbody>
+          ${evals.map(e=>`<tr>
+            <td><span onclick="selectAndGo('${esc(e.patient_id)}')" style="cursor:pointer;color:var(--accent)">${esc(e.patient_id)}</span><br><span style="font-size:9px;color:var(--text-dim)">h${esc(e.hour_idx)||'?'}</span></td>
+            <td>${esc(e.cohort||'').replace(/_/g,' ')}</td>
+            <td><span class="flag-badge ${esc(e.flag)}" style="font-size:10px;padding:2px 8px">${esc(e.flag)}</span></td>
+            <td style="color:${e.flag_source==='floor'?'var(--yellow)':'var(--text-dim)'};font-size:10px">${esc(e.flag_source)||'—'}</td>
+            <td><span class="eval-badge ${esc(e.label)}">${esc(e.label).toUpperCase()}</span></td>
+            <td>${e.scores?.acute_risk?.toFixed(1)||'—'}</td>
+            <td>${e.scores?.chronic_risk?.toFixed(1)||'—'}</td>
+            <td>${e.chronic_signals?.delta_hr?.toFixed(1)||'—'}</td>
+            <td>${e.chronic_signals?.pct_hrv?.toFixed(1)||'—'}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function clearEvals() {
+  // confirm() is blocked in sandboxed iframe environments (returns false silently).
+  // Use inline two-step confirmation instead.
+  const btn = document.querySelector('[onclick="clearEvals()"]');
+  if (!btn) { _doClearEvals(); return; }
+  if (btn.dataset.confirming === '1') {
+    _doClearEvals();
+    btn.textContent = 'Clear All';
+    btn.dataset.confirming = '0';
+    btn.style.background = '';
+    btn.style.color = '';
+  } else {
+    btn.textContent = 'Confirm?';
+    btn.dataset.confirming = '1';
+    btn.style.background = 'var(--red)';
+    btn.style.color = '#fff';
+    setTimeout(() => {
+      if (btn.dataset.confirming === '1') {
+        btn.textContent = 'Clear All';
+        btn.dataset.confirming = '0';
+        btn.style.background = '';
+        btn.style.color = '';
+      }
+    }, 3000);
+  }
+}
+function _doClearEvals() {
+  evaluations = {};
+  clearEvalsFromStorage();
+  renderEvalPage();
+}
+
+function clearPatientFlags() {
+  // confirm() is blocked in sandboxed iframe environments (returns false silently).
+  // Use inline two-step confirmation instead.
+  const btn = document.querySelector('[onclick="clearPatientFlags()"]');
+  if (!btn) { _doClearPatientFlags(); return; }
+  if (btn.dataset.confirming === '1') {
+    _doClearPatientFlags();
+    btn.innerHTML = '✕ Clear Flags';
+    btn.dataset.confirming = '0';
+    btn.style.background = 'var(--red-bg)';
+    btn.style.borderColor = 'var(--red-dim)';
+  } else {
+    btn.innerHTML = 'Confirm?';
+    btn.dataset.confirming = '1';
+    btn.style.background = 'var(--red)';
+    btn.style.borderColor = 'var(--red)';
+    setTimeout(() => {
+      if (btn.dataset.confirming === '1') {
+        btn.innerHTML = '✕ Clear Flags';
+        btn.dataset.confirming = '0';
+        btn.style.background = 'var(--red-bg)';
+        btn.style.borderColor = 'var(--red-dim)';
+      }
+    }, 3000);
+  }
+}
+function _doClearPatientFlags() {
+  evaluations = {};
+  clearEvalsFromStorage();
+  renderList();
+  if (selectedId) {
+    const r = results.find(x => x.patient_id === selectedId);
+    if (r) renderDetail(r);
+  }
+  setStatus('All patient flag evaluations cleared.');
+}
+
+function selectAndGo(id) {
+  showPage('scoring');
+  document.querySelectorAll('.tab-btn')[0].classList.add('active');
+  document.querySelectorAll('.tab-btn')[1].classList.remove('active');
+  selectPatient(id);
+}
+
+function setStatus(msg) { document.getElementById('statusBar').textContent = msg; }
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  maybeShowStorageBanner();
+});
+</script>
+</body>
+</html>
