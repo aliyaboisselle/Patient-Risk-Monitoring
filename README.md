@@ -24,9 +24,9 @@ This repository documents the proposed architecture and implementation roadmap.
 Below are the instructions on how to run the synthetic study. 
 1. Run the generate patient data v1.py
    - This will give you a JSON file with synthetic patient data compatible with either the dashboard directly or with the scoring engine. The default is Seed 42, but other seeds can be used. You can also rename the output file. 
-  -  Sample run command: python3 generate_patient_data_v1.py --seed 42 --output patient_data_v1.json
+   -  Sample run command: python3 generate_patient_data_v1.py --seed 42 --output patient_data_v1.json
 2. If you prefer to run the scoring py and generate a JSON, you can then run the scoring py using your generated mock data
-  - Sample run:  python3 scoring_engine_v1.py --data patient_data_v1.json --hour 360 --patient CF_001
+   - Sample run:  python3 scoring_engine_v1.py --data patient_data_v1.json --hour 360 --patient CF_001
 3. Either input the file from #1 or #2 into the dashboard (output from #1 would go in data field, output from #2 would go into results field - only one is needed). This will allow you to fiew and audit the results of the scoring engine. Metrics tab will give an overview of how the scoring engine is performing based on results audit.
 
 ## Deviations From Architecture
