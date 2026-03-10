@@ -9,7 +9,7 @@ The synthetic mock study v1 provides a method for displaying risk calculations a
 
 ## Project Status
 
-This project is currently in the architecture and mock study phase
+This project is currently in the architecture and mock study phase.
 No production code or live integrations exist yet.
 
 The goal of this V1 implementation is to validate:
@@ -19,6 +19,38 @@ The goal of this V1 implementation is to validate:
 - Basic dashboard auditability
 
 This repository documents the proposed architecture and implementation roadmap.
+
+## How to Run
+Below are the instructions on how to run the synthetic study. 
+1. Run the generate patient data v1.py
+   - This will give you a JSON file with synthetic patient data compatible with either the dashboard directly or with the scoring engine. The default is Seed 42, but other seeds can be used. You can also rename the output file. 
+  -  Sample run command: python3 generate_patient_data_v1.py --seed 42 --output patient_data_v1.json
+2. If you prefer to run the scoring py and generate a JSON, you can then run the scoring py using your generated mock data
+  - Sample run:  python3 scoring_engine_v1.py --data patient_data_v1.json --hour 360 --patient CF_001
+3. Either input the file from #1 or #2 into the dashboard (output from #1 would go in data field, output from #2 would go into results field - only one is needed). This will allow you to fiew and audit the results of the scoring engine. Metrics tab will give an overview of how the scoring engine is performing based on results audit.
+
+## Deviations From Architecture
+- DEV-001 [af_status field, §3]: Spec defines af_minutes (numeric). Implementation
+    uses af_status (categorical string) to enable direct severity table lookup.
+
+- DEV-002 [activity_state extensions, §4.1]: Spec's activity modifier table does
+    not include "strength", "cardio", or "light" activity states. Implementation
+    adds these as priority-0 rules evaluated before the step-count rules:
+      strength → ×0.75  (high HR + low steps expected; wearable gym classification)
+      cardio   → ×0.50  (stationary cardio; without this, fires high_hr_sedentary ×1.5)
+      light    → ×0.75  (light activity; HR elevation expected, not concerning)
+    Without cardio handling, a healthy patient on a stationary bike fires RED.
+    Approved extension.
+
+- DEV-003 [24-hour cooldown + active case suppression, §8]: Spec requires a 24-hour
+    cooldown for same/lower flags and suppression when an active case exists. These
+    require persistent state across scoring runs and are NOT implemented in v1.
+    Required before any production deployment.
+
+- DEV-004 [active_minutes field, §3]: Spec defines active_minutes per hourly pull.
+    Implementation uses avg_steps_per_min as a proxy. The duration >10 min gate on
+    Score-100 conditions cannot be fully evaluated without this field.
+
 
 ## Architecture
 **Wearable Input Layer**
